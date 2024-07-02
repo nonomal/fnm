@@ -3,9 +3,9 @@ use crate::alias::create_alias;
 use crate::arch::get_safe_arch;
 use crate::config::FnmConfig;
 use crate::downloader::{install_node_dist, Error as DownloaderError};
-use crate::log_level::LogLevel;
 use crate::lts::LtsType;
 use crate::outln;
+use crate::progress::ProgressConfig;
 use crate::remote_node_index;
 use crate::user_version::UserVersion;
 use crate::version::Version;
@@ -27,9 +27,11 @@ pub struct Install {
     #[clap(long, conflicts_with_all = &["version", "lts"])]
     pub latest: bool,
 
-    /// Do not display a progress bar
-    #[clap(long)]
-    pub no_progress: bool,
+    /// Show an interactive progress bar for the download
+    /// status.
+    #[clap(long, default_value_t)]
+    #[arg(value_enum)]
+    pub progress: ProgressConfig,
 }
 
 impl Install {
@@ -39,19 +41,19 @@ impl Install {
                 version: v,
                 lts: false,
                 latest: false,
-                no_progress: _,
+                ..
             } => Ok(v),
             Self {
                 version: None,
                 lts: true,
                 latest: false,
-                no_progress: _,
+                ..
             } => Ok(Some(UserVersion::Full(Version::Lts(LtsType::Latest)))),
             Self {
                 version: None,
                 lts: false,
                 latest: true,
-                no_progress: _,
+                ..
             } => Ok(Some(UserVersion::Full(Version::Latest))),
             _ => Err(Error::TooManyVersionsProvided),
         }
@@ -63,8 +65,7 @@ impl Command for Install {
 
     fn apply(self, config: &FnmConfig) -> Result<(), Self::Error> {
         let current_dir = std::env::current_dir().unwrap();
-
-        let show_progress = !self.no_progress && config.log_level().is_writable(&LogLevel::Info);
+        let show_progress = self.progress.enabled(config);
 
         let current_version = self
             .version()?
@@ -147,7 +148,7 @@ impl Command for Install {
                 outln!(config, Error, "{} {}", "warning:".bold().yellow(), err);
             }
             Err(source) => Err(Error::DownloadError { source })?,
-            Ok(_) => {}
+            Ok(()) => {}
         };
 
         if config.corepack_enabled() {
@@ -155,23 +156,29 @@ impl Command for Install {
             enable_corepack(&version, config)?;
         }
 
-        if let UserVersion::Full(Version::Lts(lts_type)) = current_version {
-            let alias_name = Version::Lts(lts_type).v_str();
-            debug!(
-                "Tagging {} as alias for {}",
-                alias_name.cyan(),
-                version.v_str().cyan()
-            );
-            create_alias(config, &alias_name, &version)?;
-        }
-
         if !config.default_version_dir().exists() {
             debug!("Tagging {} as the default version", version.v_str().cyan());
             create_alias(config, "default", &version)?;
         }
 
+        if let Some(tagged_alias) = current_version.inferred_alias() {
+            tag_alias(config, &version, &tagged_alias)?;
+        }
+
         Ok(())
     }
+}
+
+fn tag_alias(config: &FnmConfig, matched_version: &Version, alias: &Version) -> Result<(), Error> {
+    let alias_name = alias.v_str();
+    debug!(
+        "Tagging {} as alias for {}",
+        alias_name.cyan(),
+        matched_version.v_str().cyan()
+    );
+    create_alias(config, &alias_name, matched_version)?;
+
+    Ok(())
 }
 
 fn enable_corepack(version: &Version, config: &FnmConfig) -> Result<(), Error> {
@@ -236,7 +243,7 @@ mod tests {
             version: UserVersion::from_str("12.0.0").ok(),
             lts: false,
             latest: false,
-            no_progress: true,
+            progress: ProgressConfig::Never,
         }
         .apply(&config)
         .expect("Can't install");
@@ -262,7 +269,7 @@ mod tests {
             version: None,
             lts: false,
             latest: true,
-            no_progress: true,
+            progress: ProgressConfig::Never,
         }
         .apply(&config)
         .expect("Can't install");

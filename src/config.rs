@@ -1,13 +1,13 @@
 use crate::arch::Arch;
+use crate::directories::Directories;
 use crate::log_level::LogLevel;
 use crate::path_ext::PathExt;
 use crate::version_file_strategy::VersionFileStrategy;
-use dirs::{data_dir, home_dir};
 use url::Url;
 
 #[derive(clap::Parser, Debug)]
 pub struct FnmConfig {
-    /// https://nodejs.org/dist/ mirror
+    /// <https://nodejs.org/dist/> mirror
     #[clap(
         long,
         env = "FNM_NODE_DIST_MIRROR",
@@ -67,7 +67,7 @@ pub struct FnmConfig {
 
     /// Enable corepack support for each new installation.
     /// This will make fnm call `corepack enable` on every Node.js installation.
-    /// For more information about corepack see https://nodejs.org/api/corepack.html
+    /// For more information about corepack see <https://nodejs.org/api/corepack.html>
     #[clap(
         long,
         env = "FNM_COREPACK_ENABLED",
@@ -87,6 +87,9 @@ pub struct FnmConfig {
         verbatim_doc_comment
     )]
     resolve_engines: bool,
+
+    #[clap(skip)]
+    directories: Directories,
 }
 
 impl Default for FnmConfig {
@@ -100,6 +103,7 @@ impl Default for FnmConfig {
             version_file_strategy: VersionFileStrategy::default(),
             corepack_enabled: false,
             resolve_engines: false,
+            directories: Directories::default(),
         }
     }
 }
@@ -134,19 +138,7 @@ impl FnmConfig {
             return dir;
         }
 
-        let legacy = home_dir()
-            .map(|dir| dir.join(".fnm"))
-            .filter(|dir| dir.exists());
-
-        let modern = data_dir().map(|dir| dir.join("fnm"));
-
-        if let Some(dir) = legacy {
-            return dir;
-        }
-
-        modern
-            .expect("Can't get data directory")
-            .ensure_exists_silently()
+        self.directories.default_base_dir()
     }
 
     pub fn installations_dir(&self) -> std::path::PathBuf {
@@ -163,6 +155,10 @@ impl FnmConfig {
         self.base_dir_with_default()
             .join("aliases")
             .ensure_exists_silently()
+    }
+
+    pub fn multishell_storage(&self) -> std::path::PathBuf {
+        self.directories.multishell_storage()
     }
 
     #[cfg(test)]

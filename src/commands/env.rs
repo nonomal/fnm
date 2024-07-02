@@ -1,6 +1,5 @@
 use super::command::Command;
 use crate::config::FnmConfig;
-use crate::directories;
 use crate::fs::symlink_dir;
 use crate::outln;
 use crate::path_ext::PathExt;
@@ -36,7 +35,7 @@ fn generate_symlink_path() -> String {
 }
 
 fn make_symlink(config: &FnmConfig) -> Result<std::path::PathBuf, Error> {
-    let base_dir = directories::multishell_storage().ensure_exists_silently();
+    let base_dir = config.multishell_storage().ensure_exists_silently();
     let mut temp_dir = base_dir.join(generate_symlink_path());
 
     while temp_dir.exists() {
@@ -44,7 +43,7 @@ fn make_symlink(config: &FnmConfig) -> Result<std::path::PathBuf, Error> {
     }
 
     match symlink_dir(config.default_version_dir(), &temp_dir) {
-        Ok(_) => Ok(temp_dir),
+        Ok(()) => Ok(temp_dir),
         Err(source) => Err(Error::CantCreateSymlink { source, temp_dir }),
     }
 }

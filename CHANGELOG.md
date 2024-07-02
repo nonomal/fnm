@@ -1,5 +1,47 @@
 ## 1.31.0 (2022-02-16)
 
+## 1.37.1
+
+### Patch Changes
+
+- [#1164](https://github.com/Schniz/fnm/pull/1164) [`318f86d`](https://github.com/Schniz/fnm/commit/318f86d72938166cb2b3195cae37826f827b6c08) Thanks [@Schniz](https://github.com/Schniz)! - windows: fix shell inference in powershell when using scoop's shims
+
+## 1.37.0
+
+### Minor Changes
+
+- [#1143](https://github.com/Schniz/fnm/pull/1143) [`f76a001`](https://github.com/Schniz/fnm/commit/f76a0011f7a613bb818e47acd224b7de48c5a81f) Thanks [@Schniz](https://github.com/Schniz)! - use XDG conventions in MacOS directories by default
+
+### Patch Changes
+
+- [#1148](https://github.com/Schniz/fnm/pull/1148) [`0b530cc`](https://github.com/Schniz/fnm/commit/0b530cc257e33e9801804b73ed831a1f28489b57) Thanks [@Schniz](https://github.com/Schniz)! - fix ordering in ls-remote
+
+- [#1133](https://github.com/Schniz/fnm/pull/1133) [`a1afe84`](https://github.com/Schniz/fnm/commit/a1afe8436afb29960b71e14e221441398f6a48ca) Thanks [@Schniz](https://github.com/Schniz)! - upgrade all dependencies & maintain lockfile
+
+## 1.36.0
+
+### Minor Changes
+
+- [#1063](https://github.com/Schniz/fnm/pull/1063) [`121128f`](https://github.com/Schniz/fnm/commit/121128f42bc27583c2cf9a77b14f60f456af4a82) Thanks [@ryanccn](https://github.com/ryanccn)! - feat: add remote version sorting and filtering
+
+- [#896](https://github.com/Schniz/fnm/pull/896) [`7b47b3e`](https://github.com/Schniz/fnm/commit/7b47b3ef0a741fe40a39efaa5eca6945b2e11c59) Thanks [@pedrofialho](https://github.com/pedrofialho)! - `fnm install latest` will now tag the `latest` alias
+
+- [#1028](https://github.com/Schniz/fnm/pull/1028) [`66efc5b`](https://github.com/Schniz/fnm/commit/66efc5b90c71f2f24592dbf8d7e28c9f53bcf5f9) Thanks [@eblocha](https://github.com/eblocha)! - Show a progress bar when downloading and extracting node
+
+### Patch Changes
+
+- [#1014](https://github.com/Schniz/fnm/pull/1014) [`6be23c8`](https://github.com/Schniz/fnm/commit/6be23c868f5ddb2a4508a1f302c345298401d674) Thanks [@tottoto](https://github.com/tottoto)! - Disable unused chrono features (#1014)
+
+- [#1050](https://github.com/Schniz/fnm/pull/1050) [`d6c132a`](https://github.com/Schniz/fnm/commit/d6c132adfd1c29c48acb0b9de42538146e23cf18) Thanks [@JakeHandsome](https://github.com/JakeHandsome)! - Fix `cd /D` on windows with `--use-on-cd`
+
+- [#1109](https://github.com/Schniz/fnm/pull/1109) [`8f3acbb`](https://github.com/Schniz/fnm/commit/8f3acbb8ee4991b838ce3fe146d62864aaa290b9) Thanks [@Vinfall](https://github.com/Vinfall)! - support `x64-musl` arch by adding a `--arch x64-musl` to fnm env
+
+- [#1125](https://github.com/Schniz/fnm/pull/1125) [`d9af62f`](https://github.com/Schniz/fnm/commit/d9af62ff432e57398efdd812e218f3fb390c5243) Thanks [@Schniz](https://github.com/Schniz)! - make nicer styling in progress bar (add newline, make it unicode)
+
+- [#1058](https://github.com/Schniz/fnm/pull/1058) [`734df47`](https://github.com/Schniz/fnm/commit/734df47795c3b71d104ec9638034447cc4ef47cc) Thanks [@aquacash5](https://github.com/aquacash5)! - fix: return default version if canonicalize fails
+
+- [#1066](https://github.com/Schniz/fnm/pull/1066) [`9ff98da`](https://github.com/Schniz/fnm/commit/9ff98da93c69013274322c3a63dfdb1beaf73875) Thanks [@floh1695](https://github.com/floh1695)! - Fixes a bug when running `eval $(fnm env)` in sh when there a spaces in the $PATH
+
 ## 1.35.1
 
 ### Patch Changes

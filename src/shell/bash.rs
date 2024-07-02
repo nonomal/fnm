@@ -18,7 +18,7 @@ impl Shell for Bash {
             .ok_or_else(|| anyhow::anyhow!("Can't convert path to string"))?;
         let path =
             super::windows_compat::maybe_fix_windows_path(path).unwrap_or_else(|| path.to_string());
-        Ok(format!("export PATH={path:?}:$PATH"))
+        Ok(format!("export PATH={path:?}:\"$PATH\""))
     }
 
     fn set_env_var(&self, name: &str, value: &str) -> String {
@@ -28,13 +28,13 @@ impl Shell for Bash {
     fn use_on_cd(&self, config: &crate::config::FnmConfig) -> anyhow::Result<String> {
         let autoload_hook = match config.version_file_strategy() {
             VersionFileStrategy::Local => indoc!(
-                r#"
+                r"
                     if [[ -f .node-version || -f .nvmrc ]]; then
                         fnm use --silent-if-unchanged
                     fi
-                "#
+                "
             ),
-            VersionFileStrategy::Recursive => r#"fnm use --silent-if-unchanged"#,
+            VersionFileStrategy::Recursive => r"fnm use --silent-if-unchanged",
         };
         Ok(formatdoc!(
             r#"
