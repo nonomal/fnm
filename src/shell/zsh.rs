@@ -1,7 +1,7 @@
 use crate::version_file_strategy::VersionFileStrategy;
 
 use super::shell::Shell;
-use indoc::{formatdoc, indoc};
+use indoc::formatdoc;
 use std::path::Path;
 
 #[derive(Debug)]
@@ -25,32 +25,49 @@ impl Shell for Zsh {
         format!("export {name}={value:?}")
     }
 
-    fn rehash(&self) -> Option<String> {
-        Some("rehash".to_string())
+    fn rehash(&self) -> Option<&'static str> {
+        Some("rehash")
     }
 
     fn use_on_cd(&self, config: &crate::config::FnmConfig) -> anyhow::Result<String> {
+        let version_file_exists_condition = if config.resolve_engines() {
+            "-f .node-version || -f .nvmrc || -f package.json"
+        } else {
+            "-f .node-version || -f .nvmrc"
+        };
         let autoload_hook = match config.version_file_strategy() {
-            VersionFileStrategy::Local => indoc!(
-                r#"
-                    if [[ -f .node-version || -f .nvmrc ]]; then
+            VersionFileStrategy::Local => formatdoc!(
+                r"
+                    if [[ {version_file_exists_condition} ]]; then
                         fnm use --silent-if-unchanged
                     fi
-                "#
+                ",
+                version_file_exists_condition = version_file_exists_condition,
             ),
-            VersionFileStrategy::Recursive => r#"fnm use --silent-if-unchanged"#,
+            VersionFileStrategy::Recursive => String::from(r"fnm use --silent-if-unchanged"),
         };
         Ok(formatdoc!(
-            r#"
+            r"
                 autoload -U add-zsh-hook
                 _fnm_autoload_hook () {{
                     {autoload_hook}
                 }}
 
-                add-zsh-hook chpwd _fnm_autoload_hook \
-                    && _fnm_autoload_hook
-            "#,
+                add-zsh-hook -D chpwd _fnm_autoload_hook
+                add-zsh-hook chpwd _fnm_autoload_hook
+            ",
             autoload_hook = autoload_hook
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn use_on_cd_removes_existing_hook_before_adding() {
+        let output = Zsh.use_on_cd(&crate::config::FnmConfig::default()).unwrap();
+        assert!(output.contains("add-zsh-hook -D chpwd _fnm_autoload_hook"));
     }
 }

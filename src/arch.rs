@@ -1,10 +1,12 @@
 use crate::version::Version;
+use clap::ValueEnum;
 
-#[derive(Clone, PartialEq, Eq, Debug)]
+#[derive(Clone, Copy, PartialEq, Eq, Debug, ValueEnum)]
 pub enum Arch {
     X86,
     X64,
     X64Musl,
+    X64Glibc217,
     Arm64,
     Armv7l,
     Ppc64le,
@@ -12,20 +14,36 @@ pub enum Arch {
     S390x,
 }
 
+impl Arch {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Arch::X86 => "x86",
+            Arch::X64 => "x64",
+            Arch::X64Musl => "x64-musl",
+            Arch::X64Glibc217 => "x64-glibc-217",
+            Arch::Arm64 => "arm64",
+            Arch::Armv7l => "armv7l",
+            Arch::Ppc64le => "ppc64le",
+            Arch::Ppc64 => "ppc64",
+            Arch::S390x => "s390x",
+        }
+    }
+}
+
 #[cfg(unix)]
 /// handle common case: Apple Silicon / Node < 16
-pub fn get_safe_arch<'a>(arch: &'a Arch, version: &Version) -> &'a Arch {
+pub fn get_safe_arch(arch: Arch, version: &Version) -> Arch {
     use crate::system_info::{platform_arch, platform_name};
 
-    return match (platform_name(), platform_arch(), version) {
-        ("darwin", "arm64", Version::Semver(v)) if v.major < 16 => &Arch::X64,
+    match (platform_name(), platform_arch(), version) {
+        ("darwin", "arm64", Version::Semver(v)) if v.major < 16 => Arch::X64,
         _ => arch,
-    };
+    }
 }
 
 #[cfg(windows)]
 /// handle common case: Apple Silicon / Node < 16
-pub fn get_safe_arch<'a>(arch: &'a Arch, _version: &Version) -> &'a Arch {
+pub fn get_safe_arch(arch: Arch, _version: &Version) -> Arch {
     arch
 }
 
@@ -45,30 +63,20 @@ impl std::str::FromStr for Arch {
             "x86" => Ok(Arch::X86),
             "x64" => Ok(Arch::X64),
             "x64-musl" => Ok(Arch::X64Musl),
+            "x64-glibc-217" => Ok(Arch::X64Glibc217),
             "arm64" => Ok(Arch::Arm64),
             "armv7l" => Ok(Arch::Armv7l),
             "ppc64le" => Ok(Arch::Ppc64le),
             "ppc64" => Ok(Arch::Ppc64),
             "s390x" => Ok(Arch::S390x),
-            unknown => Err(ArchError::new(&format!("Unknown Arch: {unknown}"))),
+            unknown => Err(ArchError::new(format!("Unknown Arch: {unknown}"))),
         }
     }
 }
 
 impl std::fmt::Display for Arch {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let arch_str = match self {
-            Arch::X86 => String::from("x86"),
-            Arch::X64 => String::from("x64"),
-            Arch::X64Musl => String::from("x64-musl"),
-            Arch::Arm64 => String::from("arm64"),
-            Arch::Armv7l => String::from("armv7l"),
-            Arch::Ppc64le => String::from("ppc64le"),
-            Arch::Ppc64 => String::from("ppc64"),
-            Arch::S390x => String::from("s390x"),
-        };
-
-        write!(f, "{arch_str}")
+        f.write_str(self.as_str())
     }
 }
 
@@ -78,16 +86,14 @@ pub struct ArchError {
 }
 
 impl ArchError {
-    fn new(msg: &str) -> ArchError {
-        ArchError {
-            details: msg.to_string(),
-        }
+    fn new(msg: String) -> ArchError {
+        ArchError { details: msg }
     }
 }
 
 impl std::fmt::Display for ArchError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        write!(f, "{}", self.details)
+        f.write_str(&self.details)
     }
 }
 

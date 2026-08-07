@@ -1,6 +1,6 @@
 use super::command::Command;
+use super::r#use::Use;
 use crate::config::FnmConfig;
-use crate::directories;
 use crate::fs::symlink_dir;
 use crate::outln;
 use crate::path_ext::PathExt;
@@ -9,6 +9,7 @@ use clap::ValueEnum;
 use colored::Colorize;
 use std::collections::HashMap;
 use std::fmt::Debug;
+use std::io::IsTerminal;
 use thiserror::Error;
 
 #[derive(clap::Parser, Debug, Default)]
@@ -29,14 +30,15 @@ pub struct Env {
 
 fn generate_symlink_path() -> String {
     format!(
-        "{}_{}",
+        "{}_{}_{:010}",
         std::process::id(),
         chrono::Utc::now().timestamp_millis(),
+        fastrand::u64(..10_000_000_000),
     )
 }
 
 fn make_symlink(config: &FnmConfig) -> Result<std::path::PathBuf, Error> {
-    let base_dir = directories::multishell_storage().ensure_exists_silently();
+    let base_dir = config.multishell_storage().ensure_exists_silently();
     let mut temp_dir = base_dir.join(generate_symlink_path());
 
     while temp_dir.exists() {
@@ -44,8 +46,34 @@ fn make_symlink(config: &FnmConfig) -> Result<std::path::PathBuf, Error> {
     }
 
     match symlink_dir(config.default_version_dir(), &temp_dir) {
-        Ok(_) => Ok(temp_dir),
+        Ok(()) => Ok(temp_dir),
         Err(source) => Err(Error::CantCreateSymlink { source, temp_dir }),
+    }
+}
+
+#[inline]
+fn bool_as_str(value: bool) -> &'static str {
+    if value {
+        "true"
+    } else {
+        "false"
+    }
+}
+
+fn set_path_for_multishell(multishell_path: &std::path::Path) {
+    let path_for_node = if cfg!(windows) {
+        multishell_path.to_path_buf()
+    } else {
+        multishell_path.join("bin")
+    };
+
+    let current_path = std::env::var_os("PATH").unwrap_or_default();
+    let mut split_paths: Vec<_> = std::env::split_paths(&current_path).collect();
+    split_paths.insert(0, path_for_node);
+    if let Ok(new_path) = std::env::join_paths(split_paths) {
+        unsafe {
+            std::env::set_var("PATH", new_path);
+        }
     }
 }
 
@@ -64,42 +92,30 @@ impl Command for Env {
         }
 
         let multishell_path = make_symlink(config)?;
-        let multishell_path_str = multishell_path.to_str().unwrap().to_owned();
+        let base_dir = config.base_dir_with_default();
 
-        let binary_path = if cfg!(windows) {
-            multishell_path
-        } else {
-            multishell_path.join("bin")
-        };
-
-        let env_vars = HashMap::from([
-            ("FNM_MULTISHELL_PATH", multishell_path_str),
+        let env_vars = [
+            ("FNM_MULTISHELL_PATH", multishell_path.to_str().unwrap()),
             (
                 "FNM_VERSION_FILE_STRATEGY",
-                config.version_file_strategy().as_str().to_owned(),
+                config.version_file_strategy().as_str(),
             ),
-            (
-                "FNM_DIR",
-                config.base_dir_with_default().to_str().unwrap().to_owned(),
-            ),
-            (
-                "FNM_LOGLEVEL",
-                <&'static str>::from(config.log_level().clone()).to_owned(),
-            ),
-            (
-                "FNM_NODE_DIST_MIRROR",
-                config.node_dist_mirror.as_str().to_owned(),
-            ),
+            ("FNM_DIR", base_dir.to_str().unwrap()),
+            ("FNM_LOGLEVEL", config.log_level().as_str()),
+            ("FNM_NODE_DIST_MIRROR", config.node_dist_mirror.as_str()),
             (
                 "FNM_COREPACK_ENABLED",
-                config.corepack_enabled().to_string(),
+                bool_as_str(config.corepack_enabled()),
             ),
-            ("FNM_RESOLVE_ENGINES", config.resolve_engines().to_string()),
-            ("FNM_ARCH", config.arch.to_string()),
-        ]);
+            ("FNM_RESOLVE_ENGINES", bool_as_str(config.resolve_engines())),
+            ("FNM_ARCH", config.arch.as_str()),
+        ];
 
         if self.json {
-            println!("{}", serde_json::to_string(&env_vars).unwrap());
+            println!(
+                "{}",
+                serde_json::to_string(&HashMap::from(env_vars)).unwrap()
+            );
             return Ok(());
         }
 
@@ -109,13 +125,42 @@ impl Command for Env {
             .or_else(infer_shell)
             .ok_or(Error::CantInferShell)?;
 
-        println!("{}", shell.path(&binary_path)?);
+        let binary_path = if cfg!(windows) {
+            shell.path(&multishell_path)
+        } else {
+            shell.path(&multishell_path.join("bin"))
+        };
+
+        println!("{}", binary_path?);
 
         for (name, value) in &env_vars {
             println!("{}", shell.set_env_var(name, value));
         }
 
         if self.use_on_cd {
+            // Call `use` internally for the initial directory, so the shell doesn't
+            // need to spawn a subprocess after evaluating the env output.
+            set_path_for_multishell(&multishell_path);
+            let config_with_multishell =
+                config.clone().with_multishell_path(multishell_path.clone());
+            let use_cmd = Use {
+                version: None,
+                install_if_missing: false,
+                silent_if_unchanged: true,
+                info_to_stderr: true,
+            };
+            let should_force_stderr_color = !std::io::stdout().is_terminal()
+                && std::io::stderr().is_terminal()
+                && std::env::var_os("NO_COLOR").is_none();
+            if should_force_stderr_color {
+                colored::control::set_override(true);
+            }
+            // Ignore errors - if there's no version file, that's fine
+            let _ = use_cmd.apply(&config_with_multishell);
+            if should_force_stderr_color {
+                colored::control::unset_override();
+            }
+
             println!("{}", shell.use_on_cd(config)?);
         }
         if let Some(v) = shell.rehash() {

@@ -14,7 +14,7 @@ pub enum SubCommand {
     LsLocal(commands::ls_local::LsLocal),
 
     /// Install a new Node.js version
-    #[clap(name = "install", bin_name = "install")]
+    #[clap(name = "install", bin_name = "install", visible_aliases = &["i"])]
     Install(commands::install::Install),
 
     /// Change Node.js version
@@ -27,8 +27,8 @@ pub enum SubCommand {
     /// should be evaluated by your shell to create a fnm-ready environment.
     ///
     /// Each shell has its own syntax of evaluating a dynamic expression.
-    /// For example, evaluating fnm on Bash and Zsh would look like `eval "$(fnm env)"`.
-    /// In Fish, evaluating would look like `fnm env | source`
+    /// For example, evaluating fnm on Bash and Zsh would look like `eval "$(fnm env --shell bash)"`.
+    /// In Fish, evaluating would look like `fnm env --shell fish | source`
     #[clap(name = "env", bin_name = "env")]
     Env(commands::env::Env),
 
@@ -44,7 +44,7 @@ pub enum SubCommand {
     #[clap(name = "unalias", bin_name = "unalias")]
     Unalias(commands::unalias::Unalias),
 
-    /// Set a version as the default version
+    /// Set a version as the default version or get the current default version.
     ///
     /// This is a shorthand for `fnm alias VERSION default`
     #[clap(name = "default", bin_name = "default")]
@@ -66,8 +66,8 @@ pub enum SubCommand {
     /// Uninstall a Node.js version
     ///
     /// > Warning: when providing an alias, it will remove the Node version the alias
-    /// is pointing to, along with the other aliases that point to the same version.
-    #[clap(name = "uninstall", bin_name = "uninstall")]
+    /// > is pointing to, along with the other aliases that point to the same version.
+    #[clap(name = "uninstall", bin_name = "uninstall", visible_aliases = &["uni"])]
     Uninstall(commands::uninstall::Uninstall),
 }
 

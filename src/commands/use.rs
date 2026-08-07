@@ -16,15 +16,19 @@ use thiserror::Error;
 
 #[derive(clap::Parser, Debug)]
 pub struct Use {
-    version: Option<UserVersionReader>,
+    pub version: Option<UserVersionReader>,
     /// Install the version if it isn't installed yet
     #[clap(long)]
-    install_if_missing: bool,
+    pub install_if_missing: bool,
 
     /// Don't output a message identifying the version being used
     /// if it will not change due to execution of this command
     #[clap(long)]
-    silent_if_unchanged: bool,
+    pub silent_if_unchanged: bool,
+
+    /// Print informational output to stderr (used internally by `fnm env`)
+    #[clap(skip)]
+    pub info_to_stderr: bool,
 }
 
 impl Command for Use {
@@ -47,7 +51,13 @@ impl Command for Use {
                 VersionFileStrategy::Local => InferVersionError::Local,
                 VersionFileStrategy::Recursive => InferVersionError::Recursive,
             })
-            .map_err(|source| Error::CantInferVersion { source })?;
+            .map_err(|source| Error::CantInferVersion { source });
+
+        // Swallow the missing version error if `silent_if_unchanged` was provided
+        let requested_version = match (self.silent_if_unchanged, requested_version) {
+            (true, Err(_)) => return Ok(()),
+            (_, v) => v?,
+        };
 
         let (message, version_path) = if let UserVersion::Full(Version::Bypassed) =
             requested_version
@@ -90,7 +100,11 @@ impl Command for Use {
         };
 
         if !self.silent_if_unchanged || will_version_change(&version_path, config) {
-            outln!(config, Info, "{}", message);
+            if self.info_to_stderr {
+                outln!(config, Error, "{}", message);
+            } else {
+                outln!(config, Info, "{}", message);
+            }
         }
 
         if let Some(multishells_path) = multishell_path.parent() {
@@ -138,6 +152,7 @@ fn install_new_version(
         version: Some(UserVersionReader::Direct(requested_version)),
         install_if_missing: true,
         silent_if_unchanged: false,
+        info_to_stderr: false,
     }
     .apply(config)?;
 
@@ -153,7 +168,7 @@ fn install_new_version(
 fn replace_symlink(from: &std::path::Path, to: &std::path::Path) -> std::io::Result<()> {
     let symlink_deletion_result = fs::remove_symlink_dir(to);
     match fs::symlink_dir(from, to) {
-        ok @ Ok(_) => ok,
+        ok @ Ok(()) => ok,
         err @ Err(_) => symlink_deletion_result.and(err),
     }
 }
@@ -166,7 +181,7 @@ fn should_install_interactively(requested_version: &UserVersion) -> bool {
     }
 
     let error_message = format!(
-        "Can't find an installed Node version matching {}.",
+        "fnm can't find an installed Node version matching {}.",
         requested_version.to_string().italic()
     );
     eprintln!("{}", error_message.red());
@@ -185,18 +200,20 @@ fn warn_if_multishell_path_not_in_path_env_var(
     multishell_path: &std::path::Path,
     config: &FnmConfig,
 ) {
-    let bin_path = if cfg!(unix) {
-        multishell_path.join("bin")
-    } else {
-        multishell_path.to_path_buf()
-    };
+    if let Some(path_var) = std::env::var_os("PATH") {
+        let bin_path = if cfg!(unix) {
+            multishell_path.join("bin")
+        } else {
+            multishell_path.to_path_buf()
+        };
 
-    let fixed_path = bin_path.to_str().and_then(shell::maybe_fix_windows_path);
-    let fixed_path = fixed_path.as_ref().map(|x| &x[..]);
+        let fixed_path = bin_path.to_str().and_then(shell::maybe_fix_windows_path);
+        let fixed_path = fixed_path.as_deref();
 
-    for path in std::env::split_paths(&std::env::var("PATH").unwrap_or_default()) {
-        if bin_path == path || fixed_path == path.to_str() {
-            return;
+        for path in std::env::split_paths(&path_var) {
+            if bin_path == path || fixed_path == path.to_str() {
+                return;
+            }
         }
     }
 

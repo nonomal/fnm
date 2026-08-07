@@ -1,13 +1,15 @@
 use super::command::Command;
+use super::r#use::Use;
 use crate::alias::create_alias;
 use crate::arch::get_safe_arch;
 use crate::config::FnmConfig;
 use crate::downloader::{install_node_dist, Error as DownloaderError};
-use crate::log_level::LogLevel;
 use crate::lts::LtsType;
 use crate::outln;
+use crate::progress::ProgressConfig;
 use crate::remote_node_index;
 use crate::user_version::UserVersion;
+use crate::user_version_reader::UserVersionReader;
 use crate::version::Version;
 use crate::version_files::get_user_version_for_directory;
 use colored::Colorize;
@@ -27,9 +29,15 @@ pub struct Install {
     #[clap(long, conflicts_with_all = &["version", "lts"])]
     pub latest: bool,
 
-    /// Do not display a progress bar
+    /// Show an interactive progress bar for the download
+    /// status.
+    #[clap(long, default_value_t)]
+    #[arg(value_enum)]
+    pub progress: ProgressConfig,
+
+    /// Use the installed version immediately after installation
     #[clap(long)]
-    pub no_progress: bool,
+    pub r#use: bool,
 }
 
 impl Install {
@@ -39,19 +47,19 @@ impl Install {
                 version: v,
                 lts: false,
                 latest: false,
-                no_progress: _,
+                ..
             } => Ok(v),
             Self {
                 version: None,
                 lts: true,
                 latest: false,
-                no_progress: _,
+                ..
             } => Ok(Some(UserVersion::Full(Version::Lts(LtsType::Latest)))),
             Self {
                 version: None,
                 lts: false,
                 latest: true,
-                no_progress: _,
+                ..
             } => Ok(Some(UserVersion::Full(Version::Latest))),
             _ => Err(Error::TooManyVersionsProvided),
         }
@@ -63,8 +71,8 @@ impl Command for Install {
 
     fn apply(self, config: &FnmConfig) -> Result<(), Self::Error> {
         let current_dir = std::env::current_dir().unwrap();
-
-        let show_progress = !self.no_progress && config.log_level().is_writable(&LogLevel::Info);
+        let show_progress = self.progress.enabled(config);
+        let use_installed = self.r#use;
 
         let current_version = self
             .version()?
@@ -125,15 +133,15 @@ impl Command for Install {
         };
 
         // Automatically swap Apple Silicon to x64 arch for appropriate versions.
-        let safe_arch = get_safe_arch(&config.arch, &version);
+        let safe_arch = get_safe_arch(config.arch, &version);
 
-        let version_str = format!("Node {}", &version);
+        let version_str = format!("Node {version}");
         outln!(
             config,
             Info,
             "Installing {} ({})",
             version_str.cyan(),
-            safe_arch.to_string()
+            safe_arch.as_str()
         );
 
         match install_node_dist(
@@ -147,22 +155,7 @@ impl Command for Install {
                 outln!(config, Error, "{} {}", "warning:".bold().yellow(), err);
             }
             Err(source) => Err(Error::DownloadError { source })?,
-            Ok(_) => {}
-        };
-
-        if config.corepack_enabled() {
-            outln!(config, Info, "Enabling corepack for {}", version_str.cyan());
-            enable_corepack(&version, config)?;
-        }
-
-        if let UserVersion::Full(Version::Lts(lts_type)) = current_version {
-            let alias_name = Version::Lts(lts_type).v_str();
-            debug!(
-                "Tagging {} as alias for {}",
-                alias_name.cyan(),
-                version.v_str().cyan()
-            );
-            create_alias(config, &alias_name, &version)?;
+            Ok(()) => {}
         }
 
         if !config.default_version_dir().exists() {
@@ -170,8 +163,33 @@ impl Command for Install {
             create_alias(config, "default", &version)?;
         }
 
+        if let Some(tagged_alias) = current_version.inferred_alias() {
+            tag_alias(config, &version, &tagged_alias)?;
+        }
+
+        if config.corepack_enabled() {
+            outln!(config, Info, "Enabling corepack for {}", version_str.cyan());
+            enable_corepack(&version, config)?;
+        }
+
+        if use_installed {
+            use_installed_version(&version, config)?;
+        }
+
         Ok(())
     }
+}
+
+fn tag_alias(config: &FnmConfig, matched_version: &Version, alias: &Version) -> Result<(), Error> {
+    let alias_name = alias.v_str();
+    debug!(
+        "Tagging {} as alias for {}",
+        alias_name.cyan(),
+        matched_version.v_str().cyan()
+    );
+    create_alias(config, &alias_name, matched_version)?;
+
+    Ok(())
 }
 
 fn enable_corepack(version: &Version, config: &FnmConfig) -> Result<(), Error> {
@@ -184,6 +202,22 @@ fn enable_corepack(version: &Version, config: &FnmConfig) -> Result<(), Error> {
     super::exec::Exec::new_for_version(version, corepack_path.to_str().unwrap(), &["enable"])
         .apply(config)
         .map_err(|source| Error::CorepackError { source })?;
+    Ok(())
+}
+
+fn use_installed_version(version: &Version, config: &FnmConfig) -> Result<(), Error> {
+    Use {
+        version: Some(UserVersionReader::Direct(UserVersion::Full(
+            version.clone(),
+        ))),
+        install_if_missing: false,
+        silent_if_unchanged: false,
+        info_to_stderr: false,
+    }
+    .apply(config)
+    .map_err(|source| Error::UseError {
+        source: Box::new(source),
+    })?;
     Ok(())
 }
 
@@ -201,10 +235,14 @@ pub enum Error {
         #[from]
         source: super::exec::Error,
     },
+    #[error(transparent)]
+    UseError {
+        source: Box<<Use as Command>::Error>,
+    },
     #[error("Can't find version in dotfiles. Please provide a version manually to the command.")]
     CantInferVersion,
-    #[error("Having a hard time listing the remote versions: {}", source)]
-    CantListRemoteVersions { source: crate::http::Error },
+    #[error(transparent)]
+    CantListRemoteVersions { source: remote_node_index::Error },
     #[error(
         "Can't find a Node version that matches {} in remote",
         requested_version
@@ -236,7 +274,8 @@ mod tests {
             version: UserVersion::from_str("12.0.0").ok(),
             lts: false,
             latest: false,
-            no_progress: true,
+            progress: ProgressConfig::Never,
+            r#use: false,
         }
         .apply(&config)
         .expect("Can't install");
@@ -262,7 +301,8 @@ mod tests {
             version: None,
             lts: false,
             latest: true,
-            no_progress: true,
+            progress: ProgressConfig::Never,
+            r#use: false,
         }
         .apply(&config)
         .expect("Can't install");
